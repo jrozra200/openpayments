@@ -1,14 +1,123 @@
 ---
-title: "Untitled"
-author: "AUTHOR"
-date: "DATE"
+title: "Openpayments Data Analysis"
+author: "Jake Rozran"
+date: "`r Sys.Date()`"
 output: html_document
 ---
 
 ```{r setup, include = FALSE}
-# SETUP CHUNK FOR EXAMPLE
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(scales)
+
+dat <- fread("https://download.cms.gov/openpayments/PGYR20_P063021/OP_DTL_GNRL_PGYR2020_P06302021.csv")
+
+dat$physician <- ifelse(dat$Physician_First_Name == "", 
+                               paste0(toupper(dat$Teaching_Hospital_Name)),
+                               paste0(toupper(dat$Physician_First_Name), " ", 
+                                      toupper(dat$Physician_Last_Name)))
+
+dat$Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Name <- toupper(
+    dat$Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Name
+)
+
+dat$hosp <- ifelse(dat$Physician_First_Name == "", TRUE, FALSE)
+
+md <- dat %>% 
+    filter(!is.na(Physician_Profile_ID)) %>% 
+    group_by(Physician_Profile_ID, 
+             physician, 
+             Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID,
+             Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Name) %>% 
+    summarise(payments = sum(Total_Amount_of_Payment_USDollars),
+              count = length(Total_Amount_of_Payment_USDollars)) %>% 
+    arrange(-payments) 
+
+co <- dat %>% 
+    group_by(Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID,
+             Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Name) %>% 
+    summarise(payments = sum(Total_Amount_of_Payment_USDollars),
+              count = length(Total_Amount_of_Payment_USDollars),
+              drs = length(unique(physician))) %>% 
+    mutate(avg_payout_dr = payments / drs,
+           avg_payout = payments / count,
+           label = dollar(payments, scale = 0.000001, accuracy = 1, suffix = "MM")) %>% 
+    arrange(-payments) 
+
+drs <- dat %>% 
+    filter(hosp == FALSE) %>% 
+    group_by(Physician_Profile_ID, 
+             physician) %>% 
+    summarise(payments = sum(Total_Amount_of_Payment_USDollars),
+              count = length(Total_Amount_of_Payment_USDollars),
+              comps = length(unique(Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID))) %>% 
+    mutate(avg_payout_comp = payments / comps,
+           avg_payout = payments / count,
+           label = dollar(payments, scale = 0.000001, accuracy = 1, suffix = "MM")) %>% 
+    arrange(-payments) 
+
+hosp <- dat %>% 
+    filter(hosp == TRUE) %>% 
+    group_by(Physician_Profile_ID, 
+             physician) %>% 
+    summarise(payments = sum(Total_Amount_of_Payment_USDollars),
+              count = length(Total_Amount_of_Payment_USDollars),
+              comps = length(unique(Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID))) %>% 
+    mutate(avg_payout_comp = payments / comps,
+           avg_payout = payments / count,
+           label = dollar(payments, scale = 0.000001, accuracy = 1, suffix = "MM")) %>% 
+    arrange(-payments) 
 ```
 
-# Final RMarkdown File
+```{r viz, echo = FALSE, message = FALSE, out.width = "100%", fig.height = 8}
+ggplot(co[1:25, ], 
+       aes(x = reorder(Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Name, 
+                       -payments),
+                y = payments)) + 
+    geom_bar(stat = "identity", fill = "navy") + 
+    geom_text(aes(label = label), nudge_y = 1000000, color = "black", 
+              angle = 90, hjust = 0) + 
+    scale_y_continuous(labels = dollar_format(), limits = c(0, max(co$payments) + 20000000)) + 
+    ylab("Payments ($)") + 
+    ggtitle("Company Payouts to Hospitals and Physicians in 2020",
+            subtitle = "Source: https://openpaymentsdata.cms.gov/dataset/txng-a8vj") + 
+    theme(panel.background = element_blank(),
+          panel.grid.major.y = element_line(color = "light gray"),
+          panel.grid.major.x = element_blank(),
+          axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+          axis.title.x = element_blank())
+```
 
-This is where you should build your final output.
+```{r docviz, echo = FALSE, message = FALSE, out.width = "100%", fig.height = 8}
+ggplot(drs[1:25, ], aes(x = reorder(physician, -payments), y = payments)) + 
+    geom_bar(stat = "identity", fill = "navy") + 
+    geom_text(aes(label = label), nudge_y = 100000, color = "black", 
+              angle = 90, hjust = 0) + 
+    scale_y_continuous(labels = dollar_format(), limits = c(0, max(drs$payments) + 2000000)) + 
+    ylab("Payments ($)") + 
+    ggtitle("Payments to Physicians in 2020",
+            subtitle = "Source: https://openpaymentsdata.cms.gov/dataset/txng-a8vj") + 
+    theme(panel.background = element_blank(),
+          panel.grid.major.y = element_line(color = "light gray"),
+          panel.grid.major.x = element_blank(),
+          axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+          axis.title.x = element_blank())
+```
+
+```{r hosviz, echo = FALSE, message = FALSE, out.width = "100%", fig.height = 8}
+ggplot(hosp[1:25, ], aes(x = reorder(physician, -payments), y = payments)) + 
+    geom_bar(stat = "identity", fill = "navy") + 
+    geom_text(aes(label = label), nudge_y = 1000000, color = "black", 
+              angle = 90, hjust = 0) + 
+    scale_y_continuous(labels = dollar_format(), limits = c(0, max(hosp$payments) + 15000000)) + 
+    ylab("Payments ($)") + 
+    ggtitle("Payments to Hospitals in 2020",
+            subtitle = "Source: https://openpaymentsdata.cms.gov/dataset/txng-a8vj") + 
+    theme(panel.background = element_blank(),
+          panel.grid.major.y = element_line(color = "light gray"),
+          panel.grid.major.x = element_blank(),
+          axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+          axis.title.x = element_blank())
+```
+
