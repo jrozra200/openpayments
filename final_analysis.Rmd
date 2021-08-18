@@ -1,0 +1,14 @@
+---
+title: "Untitled"
+author: "AUTHOR"
+date: "DATE"
+output: html_document
+---
+
+```{r setup, include = FALSE}
+# SETUP CHUNK FOR EXAMPLE
+```
+
+# Final RMarkdown File
+
+This is where you should build your final output.
